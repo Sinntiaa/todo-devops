@@ -23,11 +23,12 @@ jobs:
         run: npm test
         working-directory: backend
 
-  # build 3 image lalu push ke Docker Hub
+   # build 3 image lalu push ke Docker Hub
   build-push:
     needs: test
     runs-on: self-hosted
     strategy:
+      fail-fast: false
       matrix:
         service: [frontend, backend, database]
     steps:
@@ -38,9 +39,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build dan push image
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/todo-${{ matrix.service }}:latest ./${{ matrix.service }}
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/todo-${{ matrix.service }}:latest
-
+          $img = "${{ secrets.DOCKERHUB_USERNAME }}/todo-${{ matrix.service }}:latest"
+          docker build -t $img ./${{ matrix.service }}
+          for ($i = 1; $i -le 3; $i++) {
+            docker push $img
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "Push gagal, coba lagi ($i/3)..."
+            Start-Sleep -Seconds 15
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          
   # CD: pull image dari Docker Hub lalu jalankan
   deploy:
     needs: build-push
