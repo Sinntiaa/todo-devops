@@ -299,19 +299,41 @@
 
     <!-- Footer -->
     <footer class="bg-white border-t border-slate-200 mt-auto py-4 text-center text-xs text-slate-400">
-        &copy; 2026 RS Medika Sejahtera &bull; Full-Stack DevOps Architecture Demo
+                &copy; 2026 RS Medika Sejahtera &bull; Full-Stack DevOps Architecture Demo<span id="backend-info"></span>
     </footer>
 
-    <!-- Script Logika Simulasi -->
+        <!-- Script Logika -->
     <script>
-        let queueData = JSON.parse(localStorage.getItem('hospital_queues')) || [
-            { id: 1, number: 'A-001', name: 'Siti Rahma', poli: 'Poli Umum', loket: 'Loket 1 - Poli Umum', status: 'Selesai' },
-            { id: 2, number: 'A-002', name: 'Ahmad Fauzi', poli: 'Poli Anak', loket: 'Loket 2 - Poli Anak', status: 'Sedang Dilayani' },
-            { id: 3, number: 'A-003', name: 'Dewi Lestari', poli: 'Poli Gigi', loket: 'Loket 3 - Poli Gigi', status: 'Menunggu' },
-            { id: 4, number: 'A-004', name: 'Rian Pratama', poli: 'Poli Penyakit Dalam', loket: 'Loket 4 - Poli Penyakit Dalam', status: 'Menunggu' }
-        ];
+        // Data diambil dari backend (API) -> disimpan di database PostgreSQL
+        let queueData = [];
+        let currentActiveQueue = null;
 
-        let currentActiveQueue = queueData.find(q => q.status === 'Sedang Dilayani') || queueData[1];
+        async function api(path, options) {
+            const res = await fetch(path, options);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || ('HTTP ' + res.status));
+            }
+            return res.json();
+        }
+        const post = (path, body) => api(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {})
+        });
+        const esc = (v) => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        async function loadQueues() {
+            try {
+                queueData = await api('/api/queues');
+                currentActiveQueue = queueData.find(q => q.status === 'Sedang Dilayani') || null;
+                renderApp();
+                const info = await api('/api/info');
+                document.getElementById('backend-info').innerText = ' \u2022 Dilayani backend container: ' + info.host;
+            } catch (e) {
+                document.getElementById('backend-info').innerText = ' \u2022 Backend tidak dapat dihubungi';
+            }
+        }
 
         setInterval(() => {
             const now = new Date();
@@ -378,7 +400,7 @@
                         <div class="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
                             <div>
                                 <h4 class="font-bold text-slate-800">${item.number}</h4>
-                                <p class="text-xs text-slate-500">${item.name} (${item.poli})</p>
+                                <p class="text-xs text-slate-500">${esc(item.name)} (${esc(item.poli)})</p>
                             </div>
                             <span class="text-xs font-semibold bg-blue-100 text-blue-700 px-2.5 py-1 rounded-lg">Menunggu</span>
                         </div>
@@ -397,9 +419,9 @@
                 historyBody.innerHTML += `
                     <tr class="hover:bg-slate-50 transition">
                         <td class="py-3 px-4 font-bold text-slate-800">${item.number}</td>
-                        <td class="py-3 px-4 text-slate-600">${item.name}</td>
-                        <td class="py-3 px-4 text-slate-600">${item.poli}</td>
-                        <td class="py-3 px-4 text-slate-600">${item.loket}</td>
+                        <td class="py-3 px-4 text-slate-600">${esc(item.name)}</td>
+                        <td class="py-3 px-4 text-slate-600">${esc(item.poli)}</td>
+                        <td class="py-3 px-4 text-slate-600">${esc(item.loket)}</td>
                         <td class="py-3 px-4"><span class="px-2.5 py-1 rounded-lg text-xs ${badgeClass}">${item.status}</span></td>
                     </tr>
                 `;
@@ -425,7 +447,7 @@
                         <div class="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between">
                             <div>
                                 <span class="font-bold text-slate-800 text-base mr-2">${item.number}</span>
-                                <span class="text-xs text-slate-500 font-medium">${item.name} (${item.poli})</span>
+                                <span class="text-xs text-slate-500 font-medium">${esc(item.name)} (${esc(item.poli)})</span>
                             </div>
                             <button onclick="callSpecificQueue(${item.id})" class="bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
                                 Panggil Ini
@@ -434,82 +456,51 @@
                     `;
                 });
             }
-
-            localStorage.setItem('hospital_queues', JSON.stringify(queueData));
         }
 
-        function generateQueueTicket(event) {
+        async function generateQueueTicket(event) {
             event.preventDefault();
             const name = document.getElementById('patient-name').value;
             const poli = document.getElementById('patient-poli').value;
-
-            const prefix = poli.charAt(0).toUpperCase();
-            const count = queueData.length + 1;
-            const queueNumber = `${prefix}-${String(count).padStart(3, '0')}`;
-
-            const newQueueItem = {
-                id: Date.now(),
-                number: queueNumber,
-                name: name,
-                poli: poli,
-                loket: 'Menunggu Loket',
-                status: 'Menunggu'
-            };
-
-            queueData.push(newQueueItem);
-            renderApp();
-
-            document.getElementById('modal-queue-number').innerText = queueNumber;
-            document.getElementById('modal-queue-poli').innerText = poli;
-            document.getElementById('modal-patient-name').innerText = name;
-            document.getElementById('ticket-modal').classList.remove('hidden');
-
-            document.getElementById('kiosk-form').reset();
+            try {
+                const ticket = await post('/api/queues', { name, poli });
+                document.getElementById('modal-queue-number').innerText = ticket.number;
+                document.getElementById('modal-queue-poli').innerText = ticket.poli;
+                document.getElementById('modal-patient-name').innerText = ticket.name;
+                document.getElementById('ticket-modal').classList.remove('hidden');
+                document.getElementById('kiosk-form').reset();
+                await loadQueues();
+            } catch (e) { alert('Gagal mengambil antrean: ' + e.message); }
         }
 
         function closeModal() {
             document.getElementById('ticket-modal').classList.add('hidden');
         }
 
+        async function callQueueById(id) {
+            const selectedLoket = document.getElementById('admin-loket-select').value;
+            try {
+                const called = await post('/api/queues/' + id + '/call', { loket: selectedLoket });
+                await loadQueues();
+                speakQueue(called.number, called.loket);
+            } catch (e) { alert('Gagal memanggil antrean: ' + e.message); }
+        }
+
         function callNextQueue() {
             const nextItem = queueData.find(q => q.status === 'Menunggu');
-            if (!nextItem) return;
-
-            queueData.forEach(q => {
-                if (q.status === 'Sedang Dilayani') q.status = 'Selesai';
-            });
-
-            const selectedLoket = document.getElementById('admin-loket-select').value;
-            nextItem.status = 'Sedang Dilayani';
-            nextItem.loket = selectedLoket;
-            currentActiveQueue = nextItem;
-
-            renderApp();
-            speakQueue(nextItem.number, selectedLoket);
+            if (nextItem) callQueueById(nextItem.id);
         }
 
         function callSpecificQueue(id) {
-            const targetItem = queueData.find(q => q.id === id);
-            if (!targetItem) return;
-
-            queueData.forEach(q => {
-                if (q.status === 'Sedang Dilayani') q.status = 'Selesai';
-            });
-
-            const selectedLoket = document.getElementById('admin-loket-select').value;
-            targetItem.status = 'Sedang Dilayani';
-            targetItem.loket = selectedLoket;
-            currentActiveQueue = targetItem;
-
-            renderApp();
-            speakQueue(targetItem.number, selectedLoket);
+            callQueueById(id);
         }
 
-        function completeCurrentQueue() {
+        async function completeCurrentQueue() {
             if (!currentActiveQueue) return;
-            currentActiveQueue.status = 'Selesai';
-            currentActiveQueue = null;
-            renderApp();
+            try {
+                await post('/api/queues/' + currentActiveQueue.id + '/complete');
+                await loadQueues();
+            } catch (e) { alert('Gagal menyelesaikan antrean: ' + e.message); }
         }
 
         function repeatCurrentCall() {
@@ -530,7 +521,8 @@
         }
 
         window.onload = function() {
-            renderApp();
+            loadQueues();
+            setInterval(loadQueues, 5000); // sinkron dengan database tiap 5 detik
         };
     </script>
 </body>
